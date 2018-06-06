@@ -107,7 +107,7 @@ class one_sample:
         self.industry_class = None
 
 
-    def define_graph:
+    def define_graph(self):
 
         with self.graph.as_default():
             self.tf_train_samples = tf.placeholder("float",None)
@@ -116,7 +116,7 @@ class one_sample:
             self.index_industry = tf.placeholder('float',None)
             self.industry_class = tf.placeholder('int32',None)
         
-            weights = tf.Variable(tf.random_normal([1,self.dim],0,0.01))
+            weights = tf.Variable(tf.random_normal([1,self.num_input],0,0.01))
             
             def model():
                 return weights + tf.expand_dims(self.latest_weight,0) 
@@ -241,16 +241,9 @@ class one_sample:
             
 
 if __name__ == '__main__':
-    num_exp = 1
+
     net = one_sample(num_input = num_comp, num_final_stocks = 50, from_index=True, timesteps = 100, learning_rate = 0.00001, \
     training_steps = 2000, display_step = 100, te_limit = 0.05, industry_deviation = 0.01, \
     turn_over_limit = 0.5, weight_deviation = 0.03, weight_max = 0.1, num_industry = len(industry_name))
     net.define_graph()
-    fe_end = 0
-    for i in range(0,num_exp):
-        print(i)
-        net.run()
-        fe_end = fe_end + net.fe_end
-    
-    fe_end = fe_end/num_exp
-    print(fe_end)
+    net.run()
