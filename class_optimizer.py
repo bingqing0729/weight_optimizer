@@ -23,19 +23,20 @@ excess, _ = pickle.load(pkl_file)
 # import 000905 components
 pkl_file = open('000905_weight.pkl','rb')
 weight0 = pickle.load(pkl_file)
+num_comp = sum(weight0.iloc[0]>0)
 
 # citic_1
 pkl_file = open('citic_1.pkl','rb')
-industry_class, industry = pickle.load(pkl_file)
+industry_name, industry = pickle.load(pkl_file)
+#print(industry_name)
 
 # import BP value
 pkl_file = open('BP.pkl','rb')
-factor_mom = pickle.load(pkl_file)
+factor_val = pickle.load(pkl_file)
 # some data cleaning
-factor = np.array(factor_mom.fillna(0))
-factor[factor<-10]=0
+factor = np.array(factor_val.fillna(0))
 factor = sklearn.preprocessing.scale(factor,axis=1)
-factor = pd.DataFrame(factor,index=factor_mom.index,columns=factor_mom.columns)
+factor = pd.DataFrame(factor,index=factor_val.index,columns=factor_val.columns)
 
 # get data samples (when n >1, can get multiple samples)
 def get_chunk(timesteps,num_input,n=1,factor=factor):
@@ -50,13 +51,13 @@ def get_chunk(timesteps,num_input,n=1,factor=factor):
         comp = weight0.iloc[current_comp_index,:][weight0.iloc[current_comp_index,:]>0]
         # industry distribution
         current_industry = industry.iloc[current_comp_index,:]
-        index_industry = [0]*len(industry_class)
-        for j in range(0,len(industry_class)):
+        index_industry = [0]*len(industry_name)
+        for j in range(0,len(industry_name)):
             current_j_industry = current_industry.loc[current_industry==j].index
             index_industry[j] = sum(comp[current_j_industry].dropna())
         index_industry = np.array(index_industry)/sum(index_industry)
         # pick num_input stocks(loc)
-        stocks = random.sample(range(0,500),num_input)
+        stocks = random.sample(range(0,num_comp),num_input)
         # stocks and weights
         stocks = comp.index[stocks]
         weights = np.array(list(comp[stocks]))/100.0
@@ -70,14 +71,14 @@ def get_chunk(timesteps,num_input,n=1,factor=factor):
             i = i-1
         i = i+1
 
-    return(x,weights,np.array(factor_h),np.array(current_industry[stocks]).astype('int32'),index_industry)
+    return(x,weights,np.array(factor_h),np.array(current_industry[stocks]).astype('int32'),index_industry,stocks)
 
 #
 class one_sample:
 
     def __init__(self, num_input, from_index, timesteps, learning_rate, \
     training_steps,display_step, te_limit, industry_deviation, \
-    turn_over_limit, weight_deviation, num_industry):
+    turn_over_limit, weight_deviation, weight_max, num_industry):
         
         self.num_input = num_input
         self.from_index = from_index
@@ -85,6 +86,7 @@ class one_sample:
         self.industry_deviation = industry_deviation
         self.turn_over_limit = turn_over_limit
         self.weight_deviation = weight_deviation
+        self.weight_max = weight_max
         self.num_industry = num_industry
         self.timesteps = timesteps
         self.display_step = display_step
@@ -120,7 +122,7 @@ class one_sample:
 
             def model(reuse=None):
 
-                return weights + tf.expand_dims(self.weight0,0) 
+                return weights + tf.expand_dims(self.latest_weight,0) 
 
             # calculate loss
             def cal_loss(output,input_samples,factor):
@@ -138,7 +140,7 @@ class one_sample:
                 one_hot = tf.one_hot(self.industry_class,self.num_industry,1,0)
                 self.real_industry_deviation = tf.reduce_mean(tf.abs(tf.subtract(tf.matmul(\
                 self.prediction[0],tf.cast(one_hot,tf.float32)),self.index_industry)))
-                real_weight_deviation = tf.reduce_mean(tf.abs(tf.subtract(self.prediction[0][0],self.weight0))) \
+                real_weight_deviation = tf.reduce_mean(tf.abs(tf.subtract(self.prediction[0][0],self.latest_weight))) \
                 if self.from_index == True else 0
                 self.turn_over = tf.reduce_mean(tf.divide(tf.abs(tf.subtract(self.prediction[0][0],\
                 self.latest_weight)),self.latest_weight))
@@ -146,7 +148,7 @@ class one_sample:
                 100000*tf.nn.relu(self.real_industry_deviation-self.industry_deviation) + \
                 100000*tf.nn.relu(real_weight_deviation-self.weight_deviation) + \
                 100000*tf.nn.relu(self.turn_over-self.turn_over_limit) + \
-                100000*tf.nn.relu(tf.reduce_mean(self.prediction[0][0])-0.1)
+                100000*tf.nn.relu(tf.reduce_mean(self.prediction[0][0])-self.weight_max)
                 self.ex_return = tf.reduce_sum(self.prediction_final)/self.timesteps*250
                 return loss
         
@@ -162,8 +164,9 @@ class one_sample:
         with self.session as sess:
             
             # training
-            training_x, weight0, factor_h, industry_class, index_industry = get_chunk(self.timesteps,self.num_input)
-            latest_weight = np.array([1.0/self.num_input]*self.num_input)
+            training_x, weight0, factor_h, industry_class, index_industry, stocks = get_chunk(self.timesteps,self.num_input)
+            #latest_weight = np.array([1.0/self.num_input]*self.num_input)
+            latest_weight = weight0/sum(weight0)
             tf.global_variables_initializer().run()
             print('Start Training:')
             l = np.zeros(self.training_steps)
@@ -188,15 +191,17 @@ class one_sample:
             print("Optimization Finished!")
 
             self.fe_end = fe[-1]
-            print(w[-1])
+            result = pd.DataFrame([w[-1],latest_weight,industry_class,factor_h],index=['final_weight','initial_weight', \
+            'industry','BP'],columns=stocks).T
+            print(result)
             
             
 
 if __name__ == '__main__':
     num_exp = 1
-    net = one_sample(num_input = 200, from_index=True, timesteps = 100, learning_rate = 0.001, \
-    training_steps = 8000, display_step = 200, te_limit = 0.05, industry_deviation = 0.01, \
-    turn_over_limit = 0.1, weight_deviation = 0.03, num_industry = len(industry_class))
+    net = one_sample(num_input = num_comp, from_index=True, timesteps = 100, learning_rate = 0.00001, \
+    training_steps = 2000, display_step = 100, te_limit = 0.05, industry_deviation = 0.01, \
+    turn_over_limit = 0.1, weight_deviation = 0.03, weight_max = 0.1, num_industry = len(industry_name))
     net.define_graph()
     fe_end = 0
     for i in range(0,num_exp):
