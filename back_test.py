@@ -40,7 +40,7 @@ factor_return = sklearn.preprocessing.scale(factor_return,axis=1)
 factor_return = pd.DataFrame(factor_return,index=factor_val.index,columns=factor_val.columns)
 
 if __name__ == '__main__':
-    BP_min = 0.5
+    BP_min = 0.8
     arg_dict = {'num_final_stocks': 100, 'te_limit': 0.05, 'industry_deviation': 0.01, 'turn_over_limit': 0.5, \
     'weight_deviation': 0.03, 'weight_max': 0.1, 'BP_min': BP_min}
     timesteps = 100
