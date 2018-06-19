@@ -12,6 +12,7 @@ import math
 import sklearn.preprocessing
 import pandas as pd
 from class_optimizer import one_sample, get_chunk
+import sys
 
 # import stocks daily excess return
 excess, _ = pd.read_pickle('clean_data.pkl')
@@ -34,30 +35,42 @@ factor_BP = pd.DataFrame(factor_BP,index=factor_val.index,columns=factor_val.col
 # import return_1m
 factor_val = pd.read_pickle('return_1m.pkl')
 # some data cleaning
-factor_return = -np.array(factor_val.fillna(0))
+factor_return = -1*np.array(factor_val.fillna(0))
 factor_return[factor_return>100]=0
 factor_return = sklearn.preprocessing.scale(factor_return,axis=1)
 factor_return = pd.DataFrame(factor_return,index=factor_val.index,columns=factor_val.columns)
 
 if __name__ == '__main__':
-    BP_min = 0.8
+    log_file = open("result.log",'w')
+    sys.stdout = log_file
+    BP_min = 0.5
     arg_dict = {'num_final_stocks': 100, 'te_limit': 0.05, 'industry_deviation': 0.01, 'turn_over_limit': 0.5, \
     'weight_deviation': 0.03, 'weight_max': 0.1, 'BP_min': BP_min}
     timesteps = 100
     future_time = 20
-    time_point = list(excess.index).index(20170103)-timesteps+future_time
+    time_point = list(excess.index).index(20170103) - timesteps
     ex_return_list = [0]
-    while time_point < list(excess.index).index(20180103)-timesteps-future_time:
+    l2 = 0
+    while time_point < list(excess.index).index(20171130) - timesteps:
         net = one_sample(num_input = num_comp, timesteps = timesteps, time_point = time_point, future_time = future_time, \
         learning_rate = 0.00001, training_steps = 2000, display_step = 100, num_industry = len(industry_name), **arg_dict)
         net.define_graph(weight_dim=num_comp)
+        print(excess.index[time_point+timesteps])
         weight0,latest_weight,training_x,test_y,factor_BP,factor_return,industry_class,index_industry,stocks = net.run()
         net.define_graph(weight_dim=arg_dict['num_final_stocks'])
         net.second_run(weight0,latest_weight,training_x,test_y,factor_BP,factor_return,industry_class,index_industry,stocks)
+        print("This month excess return: "+str(net.ex_return_end))
         ex_return_list.append(net.ex_return_end+ex_return_list[-1])
+        l2 = l2 + net.l2_end
         time_point = time_point + future_time
+    
+    ex = ex_return_list[-1]
+    te = math.sqrt(l2)
+    IR = ex/te
+    print("TE: " + str(te) + ", EX: " + str(ex) + ", IR: " + str(IR))
     
     plt.figure()
     plt.plot(ex_return_list)
     output = 'back_test_BP_min='+str(BP_min)+'.jpg'
     plt.savefig(output)
+    log_file.close()

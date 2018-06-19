@@ -35,10 +35,11 @@ factor_BP = pd.DataFrame(factor_BP,index=factor_val.index,columns=factor_val.col
 # import return_1m
 factor_val = pd.read_pickle('return_1m.pkl')
 # some data cleaning
-factor_return = -np.array(factor_val.fillna(0))
+factor_return = -1*np.array(factor_val.fillna(0))
 factor_return[factor_return>100]=0
 factor_return = sklearn.preprocessing.scale(factor_return,axis=1)
 factor_return = pd.DataFrame(factor_return,index=factor_val.index,columns=factor_val.columns)
+
 
 # get data samples 
 def get_chunk(timesteps,num_input,time_point,future_time,factor_BP=factor_BP,factor_return=factor_return):
@@ -120,13 +121,14 @@ class one_sample:
                 return weights + tf.expand_dims(self.latest_weight,0) 
                 
             # calculate loss
-            def cal_loss(output,input_samples,factor_BP,factor_return):
+            def cal_loss(output,test_samples,train_samples,factor_BP,factor_return):
                 
                 self.prediction = tf.abs(output)
                 # the output stock weights after normalization
                 self.prediction = tf.expand_dims(tf.divide(self.prediction,tf.expand_dims( \
                 tf.reduce_sum(self.prediction,1),1)),1)
-                self.prediction_final = tf.reduce_sum(tf.multiply(tf.expand_dims(input_samples,1),self.prediction),2)
+                self.prediction_final_test = tf.reduce_sum(tf.multiply(tf.expand_dims(test_samples,1),self.prediction),2)
+                self.prediction_final_train = tf.reduce_sum(tf.multiply(tf.expand_dims(train_samples,1),self.prediction),2)
                 # factor_BP
                 factor_BP = tf.expand_dims(factor_BP,0)
                 self.fe_BP = tf.reduce_sum(tf.reduce_sum(tf.multiply( \
@@ -136,7 +138,9 @@ class one_sample:
                 self.fe_return = tf.reduce_sum(tf.reduce_sum(tf.multiply( \
                 tf.expand_dims(factor_return,0),self.prediction),2),1)
                 # tracking error
-                self.te = tf.sqrt(tf.nn.l2_loss(self.prediction_final)*2/self.timesteps*250)
+                self.te_train = tf.sqrt(tf.nn.l2_loss(self.prediction_final_train)*2/self.timesteps*250)
+                self.l2 = tf.nn.l2_loss(self.prediction_final_test)*2
+                self.te_test = tf.sqrt(tf.nn.l2_loss(self.prediction_final_test)*2/self.future_time*250)
                 # industry proportion
                 one_hot = tf.one_hot(self.industry_class,self.num_industry,1,0)
                 self.real_industry_deviation = tf.reduce_mean(tf.abs(tf.subtract(tf.matmul( \
@@ -144,17 +148,17 @@ class one_sample:
                 real_weight_deviation = tf.reduce_mean(tf.abs(tf.subtract(self.prediction[0][0],self.latest_weight)))
                 self.turn_over = tf.reduce_mean(tf.divide(tf.abs(tf.subtract(self.prediction[0][0], \
                 self.latest_weight)),self.latest_weight))
-                loss = -1000*self.fe_return + 100000*tf.nn.relu(self.te-self.te_limit) + \
+                loss = -1000*self.fe_return + 100000*tf.nn.relu(self.te_train-self.te_limit) + \
                 100000*tf.nn.relu(self.real_industry_deviation-self.industry_deviation) + \
                 100000*tf.nn.relu(real_weight_deviation-self.weight_deviation) + \
                 100000*tf.nn.relu(self.turn_over-self.turn_over_limit) + \
                 100000*tf.nn.relu(tf.reduce_mean(self.prediction[0][0])-self.weight_max) + \
                 100000*tf.nn.relu(self.BP_min-self.fe_BP)
-                self.ex_return = tf.reduce_sum(self.prediction_final)
+                self.ex_return = tf.reduce_sum(self.prediction_final_test)
                 return loss
         
             output =  model()
-            self.loss = cal_loss(output=output,input_samples=self.tf_test_samples,factor_BP=self.factor_BP,factor_return=self.factor_return)
+            self.loss = cal_loss(output=output,test_samples=self.tf_test_samples,train_samples=self.tf_train_samples,factor_BP=self.factor_BP,factor_return=self.factor_return)
             self.optimizer = tf.train.GradientDescentOptimizer(learning_rate = self.learning_rate).minimize(self.loss)
 
     
@@ -174,22 +178,22 @@ class one_sample:
             l = np.zeros(self.training_steps)
             ex_return = np.zeros(self.training_steps)
             te = np.zeros(self.training_steps)
-            fe = np.zeros(self.training_steps)
+            fe_BP = np.zeros(self.training_steps)
+            fe_return = np.zeros(self.training_steps)
             w = np.zeros([self.training_steps,self.num_input])
             turn_over = np.zeros(self.training_steps)
             id_dev = np.zeros(self.training_steps)
             for step in range(0, self.training_steps):
             # Run optimization op (backprop)
-                _, l[step], ex_return[step], te[step], fe[step], w[step], turn_over[step], id_dev[step] = \
-                sess.run([self.optimizer,self.loss,self.ex_return,self.te,self.fe_BP,self.prediction,\
+                _, l[step], ex_return[step], te[step], fe_BP[step], fe_return[step], w[step], turn_over[step], id_dev[step] = \
+                sess.run([self.optimizer,self.loss,self.ex_return,self.te_test,self.fe_BP,self.fe_return,self.prediction,\
                 self.turn_over,self.real_industry_deviation], \
-                                        feed_dict={self.tf_train_samples: training_x, self.tf_test_samples: test_y,\
+                                        feed_dict={self.tf_train_samples: training_x, self.tf_test_samples: test_y, \
                                         self.latest_weight:  latest_weight, self.factor_BP: factor_BP, self.factor_return: \
                                         factor_return, self.industry_class: industry_class, self.index_industry: index_industry, \
-                                        })       
-                if step % self.display_step == 0:
-                    print("Step {0:4s}, Loss = {1:12.3f}, Turn_over = {2:6.2f}, TE = {3:.3f}, Industry_dev = {4:.3f}, FE = {5:.3f}".format(str(step),l[step],turn_over[step],\
-                    te[step],id_dev[step],fe[step]))
+                                        })
+                #if step % self.display_step == 0:
+                    #print("Step {0:4s}, Loss = {1:12.3f}, Turn_over = {2:6.2f}, TE = {3:.3f}, Industry_dev = {4:.3f}, FE_BP = {5:.3f}, FE_return = {6:.3f}".format(str(step),l[step],turn_over[step],te[step],id_dev[step],fe_BP[step],fe_return[step]))
 
             print("First Optimization Finished!")
 
@@ -228,28 +232,28 @@ class one_sample:
             l = np.zeros(self.training_steps)
             ex_return = np.zeros(self.training_steps)
             te = np.zeros(self.training_steps)
-            fe = np.zeros(self.training_steps)
+            l2 = np.zeros(self.training_steps)
+            fe_BP = np.zeros(self.training_steps)
+            fe_return = np.zeros(self.training_steps)
             w = np.zeros([self.training_steps,self.num_final_stocks])
             turn_over = np.zeros(self.training_steps)
             id_dev = np.zeros(self.training_steps)
             for step in range(0, self.training_steps):
-            # Run optimization op (backprop)
-                _, l[step], ex_return[step], te[step], fe[step], w[step], turn_over[step], id_dev[step] = \
-                sess.run([self.optimizer,self.loss,self.ex_return,self.te,self.fe_BP,self.prediction,\
+            # Run optimization 
+                _, l[step], ex_return[step], te[step], l2[step], fe_BP[step], fe_return[step], w[step], turn_over[step], id_dev[step] = \
+                sess.run([self.optimizer,self.loss,self.ex_return,self.te_test,self.l2,self.fe_BP,self.fe_return,self.prediction,\
                 self.turn_over,self.real_industry_deviation], \
-                                        feed_dict={self.tf_train_samples: training_x, self.tf_test_samples: test_y,\
-                                        self.latest_weight:  latest_weight, self.factor_BP: factor_BP, self.factor_return: \
+                                        feed_dict={self.tf_train_samples: training_x, self.tf_test_samples: test_y, \
+                                        self.latest_weight: latest_weight, self.factor_BP: factor_BP, self.factor_return: \
                                         factor_return, self.industry_class: industry_class, self.index_industry: index_industry, \
                                         })       
                 if step % self.display_step == 0:
-                    print("Step {0:4s}, Loss = {1:12.3f}, Turn_over = {2:6.2f}, TE = {3:.3f}, Industry_dev = {4:.3f}, FE = {5:.3f}".format(str(step),l[step],turn_over[step],\
-                    te[step],id_dev[step],fe[step]))
-
-            print("Second Optimization Finished!")
+                    print("Step {0:4s}, Loss = {1:12.3f}, Turn_over = {2:6.2f}, TE = {3:.3f}, Industry_dev = {4:.3f}, FE_BP = {5:.3f}, FE_return = {6:.3f}".format(str(step),l[step],turn_over[step],te[step],id_dev[step],fe_BP[step],fe_return[step]))
 
             self.ex_return_end = ex_return[-1]
-            result = pd.DataFrame([w[-1],latest_weight,industry_class,factor_BP],index=['final_weight','initial_weight', \
-            'industry','BP'],columns=stocks).T
+            self.l2_end = l2[-1]
+            result = pd.DataFrame([w[-1],latest_weight,industry_class,factor_BP,factor_return],index=['final_weight','initial_weight', \
+            'industry','BP','return_1m'],columns=stocks).T
             print(result)
             
 
