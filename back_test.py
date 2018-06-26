@@ -33,11 +33,11 @@ factor_BP = sklearn.preprocessing.scale(factor_BP,axis=1)
 factor_BP = pd.DataFrame(factor_BP,index=factor_val.index,columns=factor_val.columns)
 
 # import return_1m
-factor_val = pd.read_pickle('DEEP_20.pkl')
+factor_val = pd.read_pickle('return_1m.pkl')
 # some data cleaning
-factor_return = np.array(factor_val.fillna(0))
-#factor_return[factor_return>100]=0
-#factor_return = sklearn.preprocessing.scale(factor_return,axis=1)
+factor_return = -1 * np.array(factor_val.fillna(0))
+factor_return[factor_return>100]=0
+factor_return = sklearn.preprocessing.scale(factor_return,axis=1)
 factor_return = pd.DataFrame(factor_return,index=factor_val.index,columns=factor_val.columns)
 
 if __name__ == '__main__':
