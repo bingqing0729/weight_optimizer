@@ -33,11 +33,11 @@ factor_BP = sklearn.preprocessing.scale(factor_BP,axis=1)
 factor_BP = pd.DataFrame(factor_BP,index=factor_val.index,columns=factor_val.columns)
 
 # import return_1m
-factor_val = pd.read_pickle('return_1m.pkl')
+factor_val = pd.read_pickle('DEEP_20.pkl')
 # some data cleaning
-factor_return = -1*np.array(factor_val.fillna(0))
+factor_return = np.array(factor_val.fillna(0))
 factor_return[factor_return>100]=0
-factor_return = sklearn.preprocessing.scale(factor_return,axis=1)
+#factor_return = sklearn.preprocessing.scale(factor_return,axis=1)
 factor_return = pd.DataFrame(factor_return,index=factor_val.index,columns=factor_val.columns)
 
 
@@ -66,10 +66,12 @@ def get_chunk(timesteps,num_input,time_point,future_time,factor_BP=factor_BP,fac
     x = excess.loc[excess.index[time_point]:excess.index[time_point+timesteps-1],stocks]
     # future excess return
     y = excess.loc[excess.index[time_point+timesteps-1]:excess.index[time_point+timesteps+future_time],stocks]
+
     # factor
     factor_BP = factor_BP.loc[excess.index[time_point+timesteps-1],stocks]
     factor_return = factor_return.loc[excess.index[time_point+timesteps-1],stocks]
 
+    
 
     return(x,y,weights,np.array(factor_BP),np.array(factor_return),np.array(current_industry[stocks]).astype('int32'),index_industry,stocks)
 
@@ -148,7 +150,7 @@ class one_sample:
                 real_weight_deviation = tf.reduce_mean(tf.abs(tf.subtract(self.prediction[0][0],self.latest_weight)))
                 self.turn_over = tf.reduce_mean(tf.divide(tf.abs(tf.subtract(self.prediction[0][0], \
                 self.latest_weight)),self.latest_weight))
-                loss = -1000*self.fe_return + 100000*tf.nn.relu(self.te_train-self.te_limit) + \
+                loss = -10000*self.fe_return + 100000*tf.nn.relu(self.te_train-self.te_limit) + \
                 100000*tf.nn.relu(self.real_industry_deviation-self.industry_deviation) + \
                 100000*tf.nn.relu(real_weight_deviation-self.weight_deviation) + \
                 100000*tf.nn.relu(self.turn_over-self.turn_over_limit) + \
@@ -172,6 +174,10 @@ class one_sample:
             training_x, test_y, weight0, factor_BP, factor_return, industry_class, index_industry, stocks = \
             get_chunk(self.timesteps,self.num_input,self.time_point,self.future_time)
             #latest_weight = np.array([1.0/self.num_input]*self.num_input)
+            quit_stocks = test_y.columns[list(set(np.where(np.isnan(test_y))[1]))]
+            print(quit_stocks)
+            training_x[quit_stocks]=0
+            test_y[quit_stocks]=0
             latest_weight = weight0/sum(weight0)
             tf.global_variables_initializer().run()
             print('Start Training:')
@@ -195,7 +201,7 @@ class one_sample:
                 #if step % self.display_step == 0:
                     #print("Step {0:4s}, Loss = {1:12.3f}, Turn_over = {2:6.2f}, TE = {3:.3f}, Industry_dev = {4:.3f}, FE_BP = {5:.3f}, FE_return = {6:.3f}".format(str(step),l[step],turn_over[step],te[step],id_dev[step],fe_BP[step],fe_return[step]))
 
-            print("First Optimization Finished!")
+            #print("First Optimization Finished!")
 
             result = pd.DataFrame([w[-1],latest_weight,industry_class,factor_BP],index=['final_weight','initial_weight', \
             'industry','BP'],columns=stocks).T
@@ -247,19 +253,20 @@ class one_sample:
                                         self.latest_weight: latest_weight, self.factor_BP: factor_BP, self.factor_return: \
                                         factor_return, self.industry_class: industry_class, self.index_industry: index_industry, \
                                         })       
-                if step % self.display_step == 0:
-                    print("Step {0:4s}, Loss = {1:12.3f}, Turn_over = {2:6.2f}, TE = {3:.3f}, Industry_dev = {4:.3f}, FE_BP = {5:.3f}, FE_return = {6:.3f}".format(str(step),l[step],turn_over[step],te[step],id_dev[step],fe_BP[step],fe_return[step]))
+                #if step % self.display_step == 0:
+                    #print("Step {0:4s}, Loss = {1:12.3f}, Turn_over = {2:6.2f}, TE = {3:.3f}, Industry_dev = {4:.3f}, FE_BP = {5:.3f}, FE_return = {6:.3f}".format(str(step),l[step],turn_over[step],te[step],id_dev[step],fe_BP[step],fe_return[step]))
 
             self.ex_return_end = ex_return[-1]
             self.l2_end = l2[-1]
+            self.fe_end = fe_return[-1]
             result = pd.DataFrame([w[-1],latest_weight,industry_class,factor_BP,factor_return],index=['final_weight','initial_weight', \
             'industry','BP','return_1m'],columns=stocks).T
-            print(result)
+            #print(result)
             
 
 if __name__ == '__main__':
     
-    arg_dict = {'num_final_stocks': 100, 'te_limit': 0.05, 'industry_deviation': 0.01, 'turn_over_limit': 0.5, \
+    arg_dict = {'num_final_stocks': 50, 'te_limit': 0.05, 'industry_deviation': 0.01, 'turn_over_limit': 0.5, \
     'weight_deviation': 0.03, 'weight_max': 0.1, 'BP_min': 0.5}
     timesteps = 100
     time_point = np.random.randint(0,len(list(excess.index[0:-timesteps])),1)[0]
