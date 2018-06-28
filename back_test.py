@@ -45,18 +45,18 @@ if __name__ == '__main__':
     #log_file = open("result_2017.log",'w')
     #sys.stdout = log_file
 
-    BP_list = [1.0,0.5,0.0,-0.5,-10]
+    BP_list = [-10]
     for BP_min in BP_list:
         print(BP_min)
         arg_dict = {'num_final_stocks': 50, 'te_limit': 0.08, 'industry_deviation': 0.01, 'turn_over_limit': 0.5, \
         'weight_deviation': 0.03, 'weight_max': 0.1, 'BP_min': BP_min}
         timesteps = 100
         future_time = 20
-        time_point = list(excess.index).index(20110106) - timesteps
+        time_point = list(excess.index).index(20110105) - timesteps
         ex_return_list = [0]
         l2 = 0
         fe_sum = 0
-        while time_point < list(excess.index).index(20111202) - timesteps:
+        while time_point < list(excess.index).index(20111207) - timesteps:
             net = one_sample(num_input = num_comp, timesteps = timesteps, time_point = time_point, future_time = future_time, \
             learning_rate = 0.00001, training_steps = 2000, display_step = 100, num_industry = len(industry_name), **arg_dict)
             net.define_graph(weight_dim=num_comp)

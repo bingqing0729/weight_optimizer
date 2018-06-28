@@ -33,11 +33,11 @@ factor_BP = sklearn.preprocessing.scale(factor_BP,axis=1)
 factor_BP = pd.DataFrame(factor_BP,index=factor_val.index,columns=factor_val.columns)
 
 # import return_1m
-factor_val = pd.read_pickle('DEEP_20.pkl')
+factor_val = pd.read_pickle('return_1m.pkl')
 # some data cleaning
-factor_return = np.array(factor_val.fillna(0))
+factor_return = -1 * np.array(factor_val.fillna(0))
 factor_return[factor_return>100]=0
-#factor_return = sklearn.preprocessing.scale(factor_return,axis=1)
+factor_return = sklearn.preprocessing.scale(factor_return,axis=1)
 factor_return = pd.DataFrame(factor_return,index=factor_val.index,columns=factor_val.columns)
 
 
@@ -65,7 +65,7 @@ def get_chunk(timesteps,num_input,time_point,future_time,factor_BP=factor_BP,fac
     # history excess return
     x = excess.loc[excess.index[time_point]:excess.index[time_point+timesteps-1],stocks]
     # future excess return
-    y = excess.loc[excess.index[time_point+timesteps-1]:excess.index[time_point+timesteps+future_time],stocks]
+    y = excess.loc[excess.index[time_point+timesteps]:excess.index[time_point+timesteps+future_time-1],stocks]
 
     # factor
     factor_BP = factor_BP.loc[excess.index[time_point+timesteps-1],stocks]
@@ -253,15 +253,15 @@ class one_sample:
                                         self.latest_weight: latest_weight, self.factor_BP: factor_BP, self.factor_return: \
                                         factor_return, self.industry_class: industry_class, self.index_industry: index_industry, \
                                         })       
-                #if step % self.display_step == 0:
-                    #print("Step {0:4s}, Loss = {1:12.3f}, Turn_over = {2:6.2f}, TE = {3:.3f}, Industry_dev = {4:.3f}, FE_BP = {5:.3f}, FE_return = {6:.3f}".format(str(step),l[step],turn_over[step],te[step],id_dev[step],fe_BP[step],fe_return[step]))
+                if step % self.display_step == 0:
+                    print("Step {0:4s}, Loss = {1:12.3f}, Turn_over = {2:6.2f}, TE = {3:.3f}, Industry_dev = {4:.3f}, FE_BP = {5:.3f}, FE_return = {6:.3f}".format(str(step),l[step],turn_over[step],te[step],id_dev[step],fe_BP[step],fe_return[step]))
 
             self.ex_return_end = ex_return[-1]
             self.l2_end = l2[-1]
             self.fe_end = fe_return[-1]
             result = pd.DataFrame([w[-1],latest_weight,industry_class,factor_BP,factor_return],index=['final_weight','initial_weight', \
             'industry','BP','return_1m'],columns=stocks).T
-            #print(result)
+            print(result)
             
 
 if __name__ == '__main__':
